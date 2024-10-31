@@ -3,11 +3,11 @@ import glob
 import json
 import os
 import time
-
+import torch 
 import numpy as np
 
-from .evaluators import Evaluator
-from .providers import ModelProvider
+from evaluators import Evaluator
+from providers import ModelProvider
 
 from asyncio import Semaphore
 from datetime import datetime, timezone
@@ -135,76 +135,138 @@ class LLMNeedleHaystackTester:
         # Wait for all tasks to complete
         await asyncio.gather(*tasks)
 
-    async def evaluate_and_log(self, context_length, depth_percent):
+#    async def evaluate_and_log(self, context_length, depth_percent):
         # Checks to see if you've already checked a length/percent/version.
         # This helps if the program stop running and you want to restart later
-        if self.save_results:
-            if self.result_exists(context_length, depth_percent):
-                return
+#        if self.save_results:
+#            if self.result_exists(context_length, depth_percent):
+#                return
 
         # Go generate the required length context and place your needle statement in
-        context = await self.generate_context(context_length, depth_percent)
+#        context = await self.generate_context(context_length, depth_percent)
 
         # Prepare your message to send to the model you're going to evaluate
-        prompt = self.model_to_test.generate_prompt(context, self.retrieval_question)
+#        prompt = self.model_to_test.generate_prompt(context, self.retrieval_question)
 
-        test_start_time = time.time()
+#        test_start_time = time.time()
 
         # Go see if the model can answer the question to pull out your random fact
-        response = await self.model_to_test.evaluate_model(prompt)
+#        response = await self.model_to_test.evaluate_model(prompt)
 
-        test_end_time = time.time()
-        test_elapsed_time = test_end_time - test_start_time
+#        test_end_time = time.time()
+#        test_elapsed_time = test_end_time - test_start_time
 
         # Compare the reponse to the actual needle you placed
-        score = self.evaluation_model.evaluate_response(response)
+#        score = self.evaluation_model.evaluate_response(response)
 
-        results = {
+#        results = {
             # 'context' : context, # Uncomment this line if you'd like to save the context the model was asked to retrieve from. Warning: This will become very large.
-            'model' : self.model_name,
-            'context_length' : int(context_length),
-            'depth_percent' : float(depth_percent),
-            'version' : self.results_version,
-            'needle' : self.needle,
-            'model_response' : response,
-            'score' : score,
-            'test_duration_seconds' : test_elapsed_time,
-            'test_timestamp_utc' : datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S%z')
-        }
+#            'model' : self.model_name,
+#            'context_length' : int(context_length),
+#            'depth_percent' : float(depth_percent),
+#            'version' : self.results_version,
+#            'needle' : self.needle,
+#            'model_response' : response,
+#            'score' : score,
+#            'test_duration_seconds' : test_elapsed_time,
+#            'test_timestamp_utc' : datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S%z')
+#        }
 
-        self.testing_results.append(results)
+#        self.testing_results.append(results)
+
+#        if self.print_ongoing_status:
+#            print (f"-- Test Summary -- ")
+#            print (f"Duration: {test_elapsed_time:.1f} seconds")
+#            print (f"Context: {context_length} tokens")
+#           print (f"Depth: {depth_percent}%")
+#            print (f"Score: {score}")
+#            print (f"Response: {response}\n")
+
+#        context_file_location = f'{self.model_name.replace(".", "_")}_len_{context_length}_depth_{int(depth_percent*100)}'
+
+#        if self.save_contexts:
+#            results['file_name'] = context_file_location
+
+            # Save the context to file for retesting
+#            if not os.path.exists('contexts'):
+#                os.makedirs('contexts')
+
+#            with open(f'contexts/{context_file_location}_context.txt', 'w') as f:
+#                f.write(context)
+            
+#        if self.save_results:
+            # Save the context to file for retesting
+#            if not os.path.exists('results'):
+#                os.makedirs('results')
+
+            # Save the result to file for retesting
+#            with open(f'results/{context_file_location}_results.json', 'w') as f:
+#                json.dump(results, f)
+
+#        if self.seconds_to_sleep_between_completions:
+#            await asyncio.sleep(self.seconds_to_sleep_between_completions)
+
+    async def evaluate_and_log(self, context_length, depth_percent):
+        # 检查是否已存在结果
+        if self.save_results and self.result_exists(context_length, depth_percent):
+            return
+
+        # 生成多个上下文块
+        contexts = await self.generate_context(context_length, depth_percent)
+
+        for context in contexts:
+            prompt = self.model_to_test.generate_prompt(context, self.retrieval_question)
+            test_start_time = time.time()
+
+            response = await self.model_to_test.evaluate_model(prompt)
+
+            test_end_time = time.time()
+            test_elapsed_time = test_end_time - test_start_time
+
+            score = self.evaluation_model.evaluate_response(response)
+
+            results = {
+                'model': self.model_name,
+                'context_length': self.get_context_length_in_tokens(context),
+                'depth_percent': float(depth_percent),
+                'version': self.results_version,
+                'needle': self.needle,
+                'model_response': response,
+                'score': score,
+                'test_duration_seconds': test_elapsed_time,
+                'test_timestamp_utc': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S%z')
+            }
+
+        async with self.results_lock:
+            self.testing_results.append(results)
 
         if self.print_ongoing_status:
-            print (f"-- Test Summary -- ")
-            print (f"Duration: {test_elapsed_time:.1f} seconds")
-            print (f"Context: {context_length} tokens")
-            print (f"Depth: {depth_percent}%")
-            print (f"Score: {score}")
-            print (f"Response: {response}\n")
+            print("-- Test Summary --")
+            print(f"Duration: {test_elapsed_time:.1f} seconds")
+            print(f"Context: {self.get_context_length_in_tokens(context)} tokens")
+            print(f"Depth: {depth_percent}%")
+            print(f"Score: {score}")
+            print(f"Response: {response}\n")
 
-        context_file_location = f'{self.model_name.replace(".", "_")}_len_{context_length}_depth_{int(depth_percent*100)}'
+        context_file_location = f'{self.model_name.replace(".", "_")}_len_{self.get_context_length_in_tokens(context)}_depth_{int(depth_percent * 100)}'
 
         if self.save_contexts:
             results['file_name'] = context_file_location
 
-            # Save the context to file for retesting
-            if not os.path.exists('contexts'):
-                os.makedirs('contexts')
+            os.makedirs('contexts', exist_ok=True)
 
             with open(f'contexts/{context_file_location}_context.txt', 'w') as f:
                 f.write(context)
-            
+        
         if self.save_results:
-            # Save the context to file for retesting
-            if not os.path.exists('results'):
-                os.makedirs('results')
+            os.makedirs('results', exist_ok=True)
 
-            # Save the result to file for retesting
             with open(f'results/{context_file_location}_results.json', 'w') as f:
                 json.dump(results, f)
 
         if self.seconds_to_sleep_between_completions:
             await asyncio.sleep(self.seconds_to_sleep_between_completions)
+
 
     def result_exists(self, context_length, depth_percent):
         """
@@ -232,6 +294,7 @@ class LLMNeedleHaystackTester:
 
         # Get your haystack dir files loaded into a string
         context = self.read_context_files()
+        #context = self.read_context_files(max_tokens=16000)
 
         # Truncate the haystack dir essays to the context length you desire
         context = self.encode_and_trim(context, context_length)
@@ -240,7 +303,7 @@ class LLMNeedleHaystackTester:
         context = self.insert_needle(context, depth_percent, context_length)
 
         return context
-    
+        
     def insert_needle(self, context, depth_percent, context_length):
         tokens_needle = self.model_to_test.encode_text_to_tokens(self.needle)
         tokens_context = self.model_to_test.encode_text_to_tokens(context)
@@ -281,23 +344,71 @@ class LLMNeedleHaystackTester:
     def get_context_length_in_tokens(self, context):
         return len(self.model_to_test.encode_text_to_tokens(context))
 
+#    def read_context_files(self, max_tokens=16000):
+#        contexts = []
+#        context = ""
+#        base_dir = os.path.abspath(os.path.dirname(__file__))  # Package directory
+#        files = glob.glob(os.path.join(base_dir, self.haystack_dir, "*.txt"))
+
+#        if not files:
+#            raise ValueError(f"No text files found in directory: {self.haystack_dir}")
+
+#        for file in files:
+#            with open(file, 'r') as f:
+#                content = f.read()
+#                tokens = self.model_to_test.encode_text_to_tokens(content)
+                # 确保 tokens 是列表
+#                if isinstance(tokens, torch.Tensor):
+#                    tokens = tokens.tolist()
+
+#                if len(tokens) + self.get_context_length_in_tokens(context) > max_tokens:
+                    # 当前 context 已满，保存并开始新的 context
+#                    if context:
+#                        contexts.append(context)
+#                    context = self.model_to_test.decode_tokens(tokens)
+#                else:
+                    #context += ' ' + self.model_to_test.decode_tokens(tokens)
+#                    context += self.model_to_test.decode_tokens(tokens)
+#        if context:
+#            contexts.append(context)
+#        return contexts
+
+#    def read_context_files(self):
+#        context = ""
+#        max_context_length = max(self.context_lengths)
+#        base_dir = os.path.abspath(os.path.dirname(__file__))  # Package directory
+
+#        while self.get_context_length_in_tokens(context) < max_context_length:
+#            for file in glob.glob(os.path.join(base_dir, self.haystack_dir, "*.txt")):
+#                with open(file, 'r') as f:
+#                    context += f.read()
+#        return context
+
     def read_context_files(self):
         context = ""
         max_context_length = max(self.context_lengths)
         base_dir = os.path.abspath(os.path.dirname(__file__))  # Package directory
 
-        while self.get_context_length_in_tokens(context) < max_context_length:
-            for file in glob.glob(os.path.join(base_dir, self.haystack_dir, "*.txt")):
-                with open(file, 'r') as f:
-                    context += f.read()
+        for file in glob.glob(os.path.join(base_dir, self.haystack_dir, "*.txt")):
+            with open(file, 'r') as f:
+                file_content = f.read()
+                context += file_content
+                if self.get_context_length_in_tokens(context) >= max_context_length:
+                    break  # 达到最大长度，停止读取更多文件
         return context
 
+#    def encode_and_trim(self, context, context_length):
+#        tokens = self.model_to_test.encode_text_to_tokens(context)
+#        if len(tokens) > context_length:
+#            context = self.model_to_test.decode_tokens(tokens, context_length)
+#        return context
     def encode_and_trim(self, context, context_length):
         tokens = self.model_to_test.encode_text_to_tokens(context)
         if len(tokens) > context_length:
-            context = self.model_to_test.decode_tokens(tokens, context_length)
+            tokens = tokens[:context_length]
+            context = self.model_to_test.decode_tokens(tokens)
         return context
-    
+
     def get_results(self):
         return self.testing_results
     
